@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart' as p;
 
 void main() {
   runApp(const MyApp());
@@ -12,262 +10,234 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter SQLite Demo',
+      title: 'SQLite User Data',
+      theme: ThemeData(primarySwatch: Colors.blue),
+      home: const UserListPage(),
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
-      home: const UserListScreen(),
     );
   }
 }
 
-// --- DATABASE HELPER CLASS ---
-class DatabaseHelper {
-  static final DatabaseHelper _instance = DatabaseHelper._internal();
-  factory DatabaseHelper() => _instance;
-  static Database? _database;
+// ========== MODEL USER ==========
+class UserModel {
+  int? id;
+  String name;
+  int age;
 
-  DatabaseHelper._internal();
+  UserModel({
+    this.id,
+    required this.name,
+    required this.age,
+  });
+}
 
-  Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _initDatabase();
-    return _database!;
-  }
+// ========== HALAMAN UTAMA ==========
+class UserListPage extends StatefulWidget {
+  const UserListPage({super.key});
 
-  Future<Database> _initDatabase() async {
-    String path = p.join(await getDatabasesPath(), 'user_database.db');
-    return await openDatabase(
-      path,
-      version: 1,
-      onCreate: (db, version) {
-        return db.execute(
-          'CREATE TABLE users(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, age INTEGER)',
+  @override
+  State<UserListPage> createState() => _UserListPageState();
+}
+
+class _UserListPageState extends State<UserListPage> {
+  // Data disimpan dalam List (temporary)
+  List<UserModel> userList = [
+    UserModel(id: 1, name: 'satu', age: 10),
+    UserModel(id: 2, name: 'dua', age: 11),
+    UserModel(id: 3, name: 'tiga', age: 12),
+    UserModel(id: 4, name: 'empat', age: 13),
+  ];
+
+  // Controller untuk form
+  final TextEditingController nameController = TextEditingController();
+  final TextEditingController ageController = TextEditingController();
+
+  // Variable untuk menyimpan mode (add atau edit)
+  int? _editingId;
+
+  // Menampilkan form (Add atau Edit)
+  void showUserForm({int? id}) {
+    _editingId = id;
+
+    if (id != null) {
+      // Mode edit: isi controller dengan data yang ada
+      final user = userList.firstWhere((data) => data.id == id);
+      nameController.text = user.name;
+      ageController.text = user.age.toString();
+    } else {
+      // Mode add: kosongkan controller
+      nameController.clear();
+      ageController.clear();
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isDismissible: false,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 20,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Name',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: ageController,
+                decoration: const InputDecoration(
+                  labelText: 'Age',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: _saveUser,
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 48),
+                ),
+                child: Text(_editingId == null ? 'TAMBAH' : 'UBAH'),
+              ),
+            ],
+          ),
         );
       },
     );
   }
 
-  Future<int> insertUser(Map<String, dynamic> user) async {
-    Database db = await database;
-    return await db.insert('users', user);
-  }
+  // Menyimpan data (Add atau Edit)
+  void _saveUser() {
+    String name = nameController.text;
 
-  Future<List<Map<String, dynamic>>> getUsers() async {
-    Database db = await database;
-    return await db.query('users');
-  }
-
-  Future<int> updateUser(Map<String, dynamic> user) async {
-    Database db = await database;
-    return await db.update(
-      'users',
-      user,
-      where: 'id = ?',
-      whereArgs: [user['id']],
-    );
-  }
-
-  Future<int> deleteUser(int id) async {
-    Database db = await database;
-    return await db.delete(
-      'users',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-}
-
-// --- UI SCREENS ---
-class UserListScreen extends StatefulWidget {
-  const UserListScreen({super.key});
-
-  @override
-  State<UserListScreen> createState() => _UserListScreenState();
-}
-
-class _UserListScreenState extends State<UserListScreen> {
-  final DatabaseHelper _dbHelper = DatabaseHelper();
-  List<Map<String, dynamic>> _users = [];
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _ageController = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    _refreshUsers();
-  }
-
-  void _refreshUsers() async {
-    final data = await _dbHelper.getUsers();
-    setState(() {
-      _users = data;
-    });
-  }
-
-  void _showForm(int? id) async {
-    if (id != null) {
-      final existingUser = _users.firstWhere((element) => element['id'] == id);
-      _nameController.text = existingUser['name'];
-      _ageController.text = existingUser['age'].toString();
-    } else {
-      _nameController.clear();
-      _ageController.clear();
+    if (name.isEmpty || ageController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nama dan umur harus diisi!')),
+      );
+      return;
     }
 
-    showModalBottomSheet(
-      context: context,
-      elevation: 5,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => Container(
-        padding: EdgeInsets.only(
-          top: 15,
-          left: 15,
-          right: 15,
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 120,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              id == null ? 'Tambah User' : 'Edit User',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(hintText: 'Name'),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _ageController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(hintText: 'Age'),
-            ),
-            const SizedBox(height: 20),
-            Center(
-              child: ElevatedButton(
-                onPressed: () async {
-                  if (id == null) {
-                    await _dbHelper.insertUser({
-                      'name': _nameController.text,
-                      'age': int.tryParse(_ageController.text) ?? 0,
-                    });
-                  } else {
-                    await _dbHelper.updateUser({
-                      'id': id,
-                      'name': _nameController.text,
-                      'age': int.tryParse(_ageController.text) ?? 0,
-                    });
-                  }
-                  _nameController.clear();
-                  _ageController.clear();
-                  if (mounted) Navigator.of(ctx).pop();
-                  _refreshUsers();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(150, 45),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(25),
-                  ),
-                ),
-                child: Text(id == null ? 'TAMBAH' : 'UPDATE'),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Center(
-              child: IconButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                icon: const Icon(Icons.cancel, color: Colors.deepPurple, size: 30),
-              ),
-            )
-          ],
-        ),
-      ),
-    );
+    int age = int.tryParse(ageController.text) ?? 0;
+
+    if (_editingId == null) {
+      // MODE ADD: Tambah data baru
+      int nextId = userList.isEmpty ? 1 : userList.last.id! + 1;
+      UserModel newUser = UserModel(
+        id: nextId,
+        name: name,
+        age: age,
+      );
+      setState(() {
+        userList.add(newUser);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Data berhasil ditambahkan!')),
+      );
+    } else {
+      // MODE EDIT: Update data yang ada
+      setState(() {
+        final user = userList.firstWhere((data) => data.id == _editingId);
+        user.name = name;
+        user.age = age;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Data berhasil diubah!')),
+      );
+    }
+
+    Navigator.pop(context); // Tutup bottomsheet
   }
 
-  void _confirmDelete(int id) {
+  // Konfirmasi hapus
+  void _confirmDelete(int id, String name) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Konfirmasi Hapus'),
-        content: const Text('Apakah anda yakin ingin menghapus user ini?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Batal', style: TextStyle(color: Colors.deepPurple)),
-          ),
-          TextButton(
-            onPressed: () async {
-              await _dbHelper.deleteUser(id);
-              if (mounted) Navigator.of(ctx).pop();
-              _refreshUsers();
-            },
-            child: const Text('Hapus', style: TextStyle(color: Colors.deepPurple)),
-          ),
-        ],
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      ),
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Konfirmasi Hapus'),
+          content: Text('Apakah anda yakin ingin menghapus user "$name"?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Batal'),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  userList.removeWhere((data) => data.id == id);
+                });
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Data berhasil dihapus!')),
+                );
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Hapus'),
+            ),
+          ],
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F0FF),
       appBar: AppBar(
-        title: const Text('List User Data', style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+        title: const Text('List User Data'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+        centerTitle: true,
       ),
-      body: ListView.builder(
-        itemCount: _users.length,
-        itemBuilder: (context, index) => Card(
-          margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-          child: ListTile(
-            title: Text(_users[index]['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text('Umur: ${_users[index]['age']}'),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.edit, color: Colors.indigo),
-                  onPressed: () => _showForm(_users[index]['id']),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.black87),
-                  onPressed: () => _confirmDelete(_users[index]['id']),
-                ),
-              ],
+      body: userList.isEmpty
+          ? const Center(
+              child: Text('Belum ada data. Tekan tombol + untuk menambah.'),
+            )
+          : ListView.builder(
+              itemCount: userList.length,
+              itemBuilder: (context, index) {
+                final user = userList[index];
+                return Card(
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: ListTile(
+                    title: Text(
+                      user.name,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text('Umur: ${user.age} tahun'),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit, color: Colors.blue),
+                          onPressed: () => showUserForm(id: user.id),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () => _confirmDelete(user.id!, user.name),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
-          ),
-        ),
-      ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _showForm(null),
-        backgroundColor: const Color(0xFFDCD6F7),
-        child: const Icon(Icons.add, color: Colors.black),
+        onPressed: () => showUserForm(),
+        child: const Icon(Icons.add),
       ),
     );
   }
